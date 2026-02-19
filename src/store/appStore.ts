@@ -1,16 +1,18 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { 
-  AppState, 
-  Step, 
-  ServiceInfo, 
-  ProcessingItemType, 
+import type {
+  AppState,
+  Step,
+  ServiceInfo,
+  ProcessingItemType,
   DetailInput,
   OutsourcingInfo,
   ThirdPartyInfo,
   OverseasInfo,
-  GeneratedDocument 
+  GeneratedDocument
 } from '@/types';
+import { generationApi } from '@/api/generation.api';
+import { documentsApi } from '@/api/documents.api';
 
 const initialServiceInfo: ServiceInfo = {
   serviceName: '',
@@ -85,6 +87,8 @@ export const useAppStore = create<AppState>()(
       document: null,
       isAdvancedMode: false,
       completionRate: 0,
+      isGenerating: false,
+      generationError: null,
 
       setStep: (step: Step) => set({ currentStep: step }),
 
@@ -201,10 +205,28 @@ export const useAppStore = create<AppState>()(
 
       setAdvancedMode: (isAdvanced: boolean) => set({ isAdvancedMode: isAdvanced }),
 
-      generateDocument: () => {
+      generateDocument: async () => {
         const { serviceInfo, selectedItems, detailInputs } = get();
-        
-        // Generate document sections based on selected items
+        set({ isGenerating: true, generationError: null });
+
+        // Try API first
+        try {
+          const { data } = await generationApi.generatePrivacyPolicy({
+            serviceInfo,
+            selectedItems,
+            detailInputs,
+          });
+          const result = data.data || data;
+          set({
+            document: { ...result, generatedAt: new Date(result.generatedAt) },
+            isGenerating: false,
+          });
+          return;
+        } catch (error) {
+          console.warn('API generation failed, using local fallback');
+        }
+
+        // Fallback: local template generation
         const sections = [];
         let order = 1;
 
@@ -449,7 +471,23 @@ ${selectedItems.filter(itemId => {
           version: 1
         };
 
-        set({ document });
+        set({ document, isGenerating: false });
+      },
+
+      saveDocument: async () => {
+        const { document, serviceInfo, selectedItems, detailInputs } = get();
+        if (!document) return;
+        try {
+          await documentsApi.create({
+            type: 'privacy-policy',
+            title: document.title,
+            content: document,
+            serviceInfo,
+            selections: { selectedItems, detailInputs },
+          });
+        } catch (error) {
+          console.error('Failed to save document', error);
+        }
       },
 
       updateDocumentSection: (sectionId: string, content: string) => {
@@ -477,6 +515,8 @@ ${selectedItems.filter(itemId => {
         document: null,
         isAdvancedMode: false,
         completionRate: 0,
+        isGenerating: false,
+        generationError: null,
       })
     }),
     {

@@ -109,14 +109,17 @@ export interface TermsState {
   document: GeneratedTerms | null;
   isAdvancedMode: boolean;
   completionRate: number;
-  
+  isGenerating: boolean;
+  generationError: string | null;
+
   // Actions
   setStep: (step: TermsStep) => void;
   setServiceInfo: (info: Partial<TermsServiceInfo>) => void;
   toggleFeature: (featureId: TermsFeatureType) => void;
   setFeatureInput: (featureId: TermsFeatureType, input: Partial<TermsFeatureInput>) => void;
   setAdvancedMode: (isAdvanced: boolean) => void;
-  generateDocument: () => void;
+  generateDocument: () => Promise<void>;
+  saveDocument: () => Promise<void>;
   updateArticle: (chapterId: string, articleId: string, content: string) => void;
   reset: () => void;
 }

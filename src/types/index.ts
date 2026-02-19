@@ -117,7 +117,9 @@ export interface AppState {
   document: GeneratedDocument | null;
   isAdvancedMode: boolean;
   completionRate: number;
-  
+  isGenerating: boolean;
+  generationError: string | null;
+
   // Actions
   setStep: (step: Step) => void;
   setServiceInfo: (info: Partial<ServiceInfo>) => void;
@@ -129,7 +131,8 @@ export interface AppState {
   removeThirdParty: (itemId: ProcessingItemType, thirdPartyId: string) => void;
   setOverseasInfo: (itemId: ProcessingItemType, info: OverseasInfo) => void;
   setAdvancedMode: (isAdvanced: boolean) => void;
-  generateDocument: () => void;
+  generateDocument: () => Promise<void>;
+  saveDocument: () => Promise<void>;
   updateDocumentSection: (sectionId: string, content: string) => void;
   reset: () => void;
 }

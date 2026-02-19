@@ -3,16 +3,18 @@ import { useTermsStore } from '@/store/termsStore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
+import {
   Copy, FileText, FileCode, Download, CheckCircle2,
-  FileDown, Globe
+  FileDown, Globe, Save
 } from 'lucide-react';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import { exportApi } from '@/api/export.api';
+import { useAuthStore } from '@/store/authStore';
 
 export function TermsExportOptions() {
-  const { document: generatedDoc, serviceInfo } = useTermsStore();
+  const { document: generatedDoc, serviceInfo, saveDocument } = useTermsStore();
+  const { isAuthenticated } = useAuthStore();
   const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
 
   if (!generatedDoc) return null;
@@ -32,40 +34,34 @@ export function TermsExportOptions() {
   };
 
   const handlePDFDownload = async () => {
-    const element = contentRef.current;
-    if (!element) return;
-
     try {
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
+      const { data } = await exportApi.exportPdf({
+        type: 'terms-of-service',
+        content: generatedDoc,
+        serviceInfo,
       });
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-      
-      let position = 0;
-      let heightLeft = imgHeight;
-
-      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight * ratio);
-      heightLeft -= pdfHeight;
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight * ratio);
-        heightLeft -= pdfHeight;
-      }
-
-      pdf.save(`${serviceInfo.serviceName}_이용약관.pdf`);
+      const url = URL.createObjectURL(data);
+      const a = window.document.createElement('a');
+      a.href = url;
+      a.download = `${serviceInfo.serviceName}_이용약관.pdf`;
+      window.document.body.appendChild(a);
+      a.click();
+      window.document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     } catch (err) {
       console.error('PDF generation failed:', err);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await saveDocument();
+      alert('문서가 저장되었습니다.');
+    } catch {
+      alert('저장에 실패했습니다.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -228,6 +224,29 @@ export function TermsExportOptions() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Save Document */}
+      {isAuthenticated && (
+        <Card>
+          <CardContent className="p-6">
+            <div className="text-center space-y-4">
+              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
+                <Save className="w-8 h-8 text-emerald-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-medium text-slate-900">문서 저장</h3>
+                <p className="text-sm text-slate-500 mt-1">
+                  내 계정에 문서를 저장하여 나중에 다시 확인하거나 수정할 수 있습니다.
+                </p>
+              </div>
+              <Button onClick={handleSave} disabled={saving} className="w-full sm:w-auto">
+                <Save className="w-4 h-4 mr-2" />
+                {saving ? '저장 중...' : '내 문서에 저장'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Embed Code */}
       <Card>
