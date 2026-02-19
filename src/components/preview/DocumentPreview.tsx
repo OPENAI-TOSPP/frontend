@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 
 export function DocumentPreview() {
-  const { document: generatedDoc, generateDocument, updateDocumentSection, serviceInfo } = useAppStore();
+  const { document: generatedDoc, generateDocument, updateDocumentSection, serviceInfo, isGenerating } = useAppStore();
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingSection, setEditingSection] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
@@ -59,7 +59,7 @@ export function DocumentPreview() {
     setEditContent('');
   };
 
-  if (!generatedDoc) {
+  if (!generatedDoc || isGenerating) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">

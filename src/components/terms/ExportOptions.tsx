@@ -1,19 +1,24 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useTermsStore } from '@/store/termsStore';
+import { useAuthStore } from '@/store/authStore';
+import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
+import {
   Copy, FileText, FileCode, Download, CheckCircle2,
-  FileDown, Globe
+  FileDown, Globe, Save, Loader2, AlertCircle,
 } from 'lucide-react';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 
 export function TermsExportOptions() {
-  const { document: generatedDoc, serviceInfo } = useTermsStore();
+  const { document: generatedDoc, serviceInfo, selectedFeatures, featureInputs } = useTermsStore();
+  const { isAuthenticated } = useAuthStore();
   const [copied, setCopied] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
+  const [isLoadingPDF, setIsLoadingPDF] = useState(false);
+  const [isLoadingHTML, setIsLoadingHTML] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!generatedDoc) return null;
 
@@ -21,7 +26,6 @@ export function TermsExportOptions() {
     const plainText = generatedDoc.chapters
       .map(ch => `${ch.title}\n\n${ch.articles.map(art => `${art.title}\n${art.content}`).join('\n\n')}`)
       .join('\n\n');
-    
     try {
       await navigator.clipboard.writeText(plainText);
       setCopied(true);
@@ -32,61 +36,59 @@ export function TermsExportOptions() {
   };
 
   const handlePDFDownload = async () => {
-    const element = contentRef.current;
-    if (!element) return;
-
+    setIsLoadingPDF(true);
+    setError(null);
     try {
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-      
-      let position = 0;
-      let heightLeft = imgHeight;
-
-      pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight * ratio);
-      heightLeft -= pdfHeight;
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight;
-        pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight * ratio);
-        heightLeft -= pdfHeight;
-      }
-
-      pdf.save(`${serviceInfo.serviceName}_이용약관.pdf`);
-    } catch (err) {
+      const response = await api.post(
+        '/export/pdf',
+        { type: 'terms-of-service', content: generatedDoc, serviceInfo },
+        { responseType: 'blob' },
+      );
+      const url = URL.createObjectURL(response.data);
+      const a = window.document.createElement('a');
+      a.href = url;
+      a.download = `${serviceInfo.serviceName}_이용약관.pdf`;
+      window.document.body.appendChild(a);
+      a.click();
+      window.document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
       console.error('PDF generation failed:', err);
+      setError(err?.message ?? 'PDF 생성에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setIsLoadingPDF(false);
     }
   };
 
-  const handleHTMLDownload = () => {
-    const htmlContent = generateFullHTML(generatedDoc, serviceInfo);
-    const blob = new Blob([htmlContent], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = window.document.createElement('a');
-    a.href = url;
-    a.download = `${serviceInfo.serviceName}_이용약관.html`;
-    window.document.body.appendChild(a);
-    a.click();
-    window.document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleHTMLDownload = async () => {
+    setIsLoadingHTML(true);
+    setError(null);
+    try {
+      const response = await api.post(
+        '/export/html',
+        { type: 'terms-of-service', content: generatedDoc, serviceInfo },
+        { responseType: 'blob' },
+      );
+      const url = URL.createObjectURL(response.data);
+      const a = window.document.createElement('a');
+      a.href = url;
+      a.download = `${serviceInfo.serviceName}_이용약관.html`;
+      window.document.body.appendChild(a);
+      a.click();
+      window.document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('HTML download failed:', err);
+      setError(err?.message ?? 'HTML 생성에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setIsLoadingHTML(false);
+    }
   };
 
   const handleTextDownload = () => {
     const plainText = generatedDoc.chapters
       .map(ch => `${ch.title}\n\n${ch.articles.map(art => `${art.title}\n${art.content}`).join('\n\n')}`)
       .join('\n\n');
-    
     const blob = new Blob([plainText], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = window.document.createElement('a');
@@ -98,26 +100,77 @@ export function TermsExportOptions() {
     URL.revokeObjectURL(url);
   };
 
+  const handleSave = async () => {
+    setIsSaving(true);
+    setError(null);
+    try {
+      await api.post('/documents', {
+        type: 'terms-of-service',
+        title: `${serviceInfo.serviceName} 서비스 이용약관`,
+        content: generatedDoc,
+        serviceInfo,
+        selections: { selectedFeatures, featureInputs },
+      });
+      setSaved(true);
+    } catch (err: any) {
+      console.error('Save failed:', err);
+      setError(err?.message ?? '저장에 실패했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <p className="text-sm">{error}</p>
+          <button onClick={() => setError(null)} className="ml-auto text-red-500 hover:text-red-700 text-lg leading-none">&times;</button>
+        </div>
+      )}
+
+      {/* 저장 카드 (로그인 상태에서만) */}
+      {isAuthenticated && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardContent className="p-6 flex items-center justify-between gap-4">
+            <div>
+              <h3 className="font-semibold text-blue-900">문서 저장</h3>
+              <p className="text-sm text-blue-700 mt-1">
+                생성된 문서를 계정에 저장하고 언제든지 다시 불러올 수 있습니다.
+              </p>
+            </div>
+            <Button
+              onClick={handleSave}
+              disabled={isSaving || saved}
+              className="shrink-0 bg-blue-600 hover:bg-blue-700"
+            >
+              {isSaving ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />저장 중...</>
+              ) : saved ? (
+                <><CheckCircle2 className="w-4 h-4 mr-2" />저장 완료</>
+              ) : (
+                <><Save className="w-4 h-4 mr-2" />저장하기</>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Export Options */}
       <Tabs defaultValue="copy" className="w-full">
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="copy">
-            <Copy className="w-4 h-4 mr-2" />
-            복사
+            <Copy className="w-4 h-4 mr-2" />복사
           </TabsTrigger>
           <TabsTrigger value="pdf">
-            <FileDown className="w-4 h-4 mr-2" />
-            PDF
+            <FileDown className="w-4 h-4 mr-2" />PDF
           </TabsTrigger>
           <TabsTrigger value="html">
-            <FileCode className="w-4 h-4 mr-2" />
-            HTML
+            <FileCode className="w-4 h-4 mr-2" />HTML
           </TabsTrigger>
           <TabsTrigger value="text">
-            <FileText className="w-4 h-4 mr-2" />
-            텍스트
+            <FileText className="w-4 h-4 mr-2" />텍스트
           </TabsTrigger>
         </TabsList>
 
@@ -140,21 +193,11 @@ export function TermsExportOptions() {
                     문서 내용을 클립보드에 복사하여 원하는 곳에 붙여넣으세요.
                   </p>
                 </div>
-                <Button 
-                  onClick={handleCopy} 
-                  className="w-full sm:w-auto"
-                  variant={copied ? 'outline' : 'default'}
-                >
+                <Button onClick={handleCopy} className="w-full sm:w-auto" variant={copied ? 'outline' : 'default'}>
                   {copied ? (
-                    <>
-                      <CheckCircle2 className="w-4 h-4 mr-2" />
-                      복사됨
-                    </>
+                    <><CheckCircle2 className="w-4 h-4 mr-2" />복사됨</>
                   ) : (
-                    <>
-                      <Copy className="w-4 h-4 mr-2" />
-                      내용 복사하기
-                    </>
+                    <><Copy className="w-4 h-4 mr-2" />내용 복사하기</>
                   )}
                 </Button>
               </div>
@@ -171,13 +214,14 @@ export function TermsExportOptions() {
                 </div>
                 <div>
                   <h3 className="text-lg font-medium text-slate-900">PDF 다운로드</h3>
-                  <p className="text-sm text-slate-500 mt-1">
-                    A4 크기의 PDF 파일로 다운로드합니다.
-                  </p>
+                  <p className="text-sm text-slate-500 mt-1">A4 크기의 PDF 파일로 다운로드합니다.</p>
                 </div>
-                <Button onClick={handlePDFDownload} className="w-full sm:w-auto">
-                  <Download className="w-4 h-4 mr-2" />
-                  PDF 다운로드
+                <Button onClick={handlePDFDownload} disabled={isLoadingPDF} className="w-full sm:w-auto">
+                  {isLoadingPDF ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />생성 중...</>
+                  ) : (
+                    <><Download className="w-4 h-4 mr-2" />PDF 다운로드</>
+                  )}
                 </Button>
               </div>
             </CardContent>
@@ -193,13 +237,14 @@ export function TermsExportOptions() {
                 </div>
                 <div>
                   <h3 className="text-lg font-medium text-slate-900">HTML 다운로드</h3>
-                  <p className="text-sm text-slate-500 mt-1">
-                    웹사이트에 바로 적용할 수 있는 HTML 파일입니다.
-                  </p>
+                  <p className="text-sm text-slate-500 mt-1">웹사이트에 바로 적용할 수 있는 HTML 파일입니다.</p>
                 </div>
-                <Button onClick={handleHTMLDownload} className="w-full sm:w-auto">
-                  <Download className="w-4 h-4 mr-2" />
-                  HTML 다운로드
+                <Button onClick={handleHTMLDownload} disabled={isLoadingHTML} className="w-full sm:w-auto">
+                  {isLoadingHTML ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" />생성 중...</>
+                  ) : (
+                    <><Download className="w-4 h-4 mr-2" />HTML 다운로드</>
+                  )}
                 </Button>
               </div>
             </CardContent>
@@ -215,13 +260,10 @@ export function TermsExportOptions() {
                 </div>
                 <div>
                   <h3 className="text-lg font-medium text-slate-900">텍스트 다운로드</h3>
-                  <p className="text-sm text-slate-500 mt-1">
-                    순수 텍스트 형식으로 다운로드합니다.
-                  </p>
+                  <p className="text-sm text-slate-500 mt-1">순수 텍스트 형식으로 다운로드합니다.</p>
                 </div>
                 <Button onClick={handleTextDownload} className="w-full sm:w-auto">
-                  <Download className="w-4 h-4 mr-2" />
-                  텍스트 다운로드
+                  <Download className="w-4 h-4 mr-2" />텍스트 다운로드
                 </Button>
               </div>
             </CardContent>
@@ -233,8 +275,7 @@ export function TermsExportOptions() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
-            <Globe className="w-4 h-4" />
-            웹사이트 연동
+            <Globe className="w-4 h-4" />웹사이트 연동
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -248,62 +289,6 @@ export function TermsExportOptions() {
           </div>
         </CardContent>
       </Card>
-
-      {/* Hidden content for PDF generation */}
-      <div 
-        ref={contentRef} 
-        className="absolute left-[-9999px] top-0 bg-white p-8"
-        style={{ width: '210mm' }}
-      >
-        <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold mb-2">서비스 이용약관</h1>
-          <p className="text-sm text-gray-600">{serviceInfo.companyName}</p>
-          <p className="text-sm text-gray-500">{new Date().toLocaleDateString('ko-KR')}</p>
-        </div>
-        {generatedDoc.chapters.map((chapter) => (
-          <div key={chapter.id} className="mb-6">
-            <h2 className="text-xl font-bold mb-4">{chapter.title}</h2>
-            {chapter.articles.map((article) => (
-              <div key={article.id} className="mb-4">
-                <h3 className="text-lg font-semibold mb-2">{article.title}</h3>
-                <div className="text-sm whitespace-pre-line">{article.content}</div>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
     </div>
   );
-}
-
-function generateFullHTML(document: any, serviceInfo: any): string {
-  return `<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>서비스 이용약관 - ${serviceInfo.serviceName}</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 40px 20px; color: #333; }
-    h1 { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
-    h2 { font-size: 1.3em; margin-top: 30px; margin-bottom: 15px; color: #1a1a1a; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
-    h3 { font-size: 1.1em; margin-top: 20px; margin-bottom: 10px; color: #333; }
-    p { margin-bottom: 10px; white-space: pre-line; }
-    .meta-info { text-align: center; color: #666; font-size: 0.9em; margin-top: 10px; }
-    @media print { body { padding: 20px; } }
-  </style>
-</head>
-<body>
-  <h1>서비스 이용약관</h1>
-  <p class="meta-info">${serviceInfo.companyName} | 시행일: ${new Date().toLocaleDateString('ko-KR')}</p>
-  
-  ${document.chapters.map((ch: any) => `
-    <h2>${ch.title}</h2>
-    ${ch.articles.map((art: any) => `
-      <h3>${art.title}</h3>
-      <p>${art.content}</p>
-    `).join('')}
-  `).join('')}
-</body>
-</html>`;
 }

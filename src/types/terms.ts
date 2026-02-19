@@ -107,6 +107,7 @@ export interface TermsState {
   selectedFeatures: TermsFeatureType[];
   featureInputs: Record<TermsFeatureType, TermsFeatureInput>;
   document: GeneratedTerms | null;
+  isGenerating: boolean;
   isAdvancedMode: boolean;
   completionRate: number;
   
@@ -116,7 +117,7 @@ export interface TermsState {
   toggleFeature: (featureId: TermsFeatureType) => void;
   setFeatureInput: (featureId: TermsFeatureType, input: Partial<TermsFeatureInput>) => void;
   setAdvancedMode: (isAdvanced: boolean) => void;
-  generateDocument: () => void;
+  generateDocument: () => Promise<void>;
   updateArticle: (chapterId: string, articleId: string, content: string) => void;
   reset: () => void;
 }
@@ -141,7 +142,7 @@ export const TERMS_SERVICE_TYPE_LABELS: Record<TermsServiceType, string> = {
 export const PAYMENT_METHODS = [
   { value: 'card', label: '신용카드' },
   { value: 'transfer', label: '계좌이체' },
-  { value: 'mobile', label: '휴전화 결제' },
+  { value: 'mobile', label: '휴대전화 결제' },
   { value: 'virtual', label: '가상계좌' },
   { value: 'kakao', label: '카카오페이' },
   { value: 'naver', label: '네이버페이' },

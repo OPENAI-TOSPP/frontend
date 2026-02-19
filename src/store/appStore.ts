@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import api from '@/lib/api';
 import type { 
   AppState, 
   Step, 
@@ -83,6 +84,7 @@ export const useAppStore = create<AppState>()(
       selectedItems: [],
       detailInputs: {} as Record<ProcessingItemType, DetailInput>,
       document: null,
+      isGenerating: false,
       isAdvancedMode: false,
       completionRate: 0,
 
@@ -201,8 +203,26 @@ export const useAppStore = create<AppState>()(
 
       setAdvancedMode: (isAdvanced: boolean) => set({ isAdvancedMode: isAdvanced }),
 
-      generateDocument: () => {
+      generateDocument: async () => {
         const { serviceInfo, selectedItems, detailInputs } = get();
+        set({ isGenerating: true });
+        try {
+          const { data } = await api.post('/generate/privacy-policy', {
+            serviceInfo,
+            selectedItems,
+            detailInputs,
+          });
+          const result = data.data ?? data;
+          set({ document: { ...result, generatedAt: new Date(result.generatedAt) } });
+          return;
+        } catch (error) {
+          console.error('백엔드 생성 실패, 폴백 실행', error);
+        } finally {
+          set({ isGenerating: false });
+        }
+
+        // 백엔드 연결 실패 시 클라이언트 폴백
+        {
         
         // Generate document sections based on selected items
         const sections = [];
@@ -297,7 +317,7 @@ ${selectedItems.map(itemId => {
     }).join('')}
   </tbody>
 </table>
-<p>회사는 위탁계약 체결 시 「개인정보 보호법」 제26조에 따라 위탁업무 수행목적 외 개인정보 처리금지, 기술적·관리적 보호조치, 재위탁 제한, 수탁자에 대한 관리·감독, 손핵배상 등 책임에 관한 사항을 계약서 등 문서에 명시하고, 수탁자가 개인정보를 안전하게 처리하는지를 감독하고 있습니다.</p>`,
+<p>회사는 위탁계약 체결 시 「개인정보 보호법」 제26조에 따라 위탁업무 수행목적 외 개인정보 처리금지, 기술적·관리적 보호조치, 재위탁 제한, 수탁자에 대한 관리·감독, 손손해배상 등 책임에 관한 사항을 계약서 등 문서에 명시하고, 수탁자가 개인정보를 안전하게 처리하는지를 감독하고 있습니다.</p>`,
             order: order++
           });
         }
@@ -398,7 +418,7 @@ ${selectedItems.filter(itemId => {
           id: 'security',
           title: `제${(hasOutsourcing ? 1 : 0) + (hasThirdParty ? 1 : 0) + (hasOverseas ? 1 : 0) + 5}조 (개인정보의 안전성 확보 조치)`,
           content: `<p>회사는 개인정보의 안전성 확보를 위해 다음과 같은 조치를 취하고 있습니다.</p>
-<p><strong>1. 관리적 조치</strong>: 날부관리계획 수립·시행, 정기적 직원 교육 등</p>
+<p><strong>1. 관리적 조치</strong>: 내부관리계획 수립·시행, 정기적 직원 교육 등</p>
 <p><strong>2. 기술적 조치</strong>: 개인정보처리시스템 등의 접근권한 관리, 접근통제시스템 설치, 고유식별정보 등의 암호화, 보안프로그램 설치 등</p>
 <p><strong>3. 물리적 조치</strong>: 전산실, 자료보관실 등의 접근통제 등</p>`,
           order: order++
@@ -422,8 +442,8 @@ ${selectedItems.filter(itemId => {
         sections.push({
           id: 'remedies',
           title: `제${(hasOutsourcing ? 1 : 0) + (hasThirdParty ? 1 : 0) + (hasOverseas ? 1 : 0) + 7}조 (권익침해 구제방법)`,
-          content: `<p>정보주체는 개인정보침해로 인한 구제를 받기 위하여 개인정볶분쟁조정위원회, 한국인터넷진흥원 개인정보침해신고센터 등에 분쟁해결이나 상담 등을 신청할 수 있습니다. 이 밖에 기타 개인정보침해의 신고, 상담에 대하여는 아래의 기관에 문의하시기 바랍니다.</p>
-<p><strong>1. 개인정볶분쟁조정위원회</strong>: (국번없이) 1833-6972 (www.kopico.go.kr)</p>
+          content: `<p>정보주체는 개인정보침해로 인한 구제를 받기 위하여 개인정보분쟁조정위원회, 한국인터넷진흥원 개인정보침해신고센터 등에 분쟁해결이나 상담 등을 신청할 수 있습니다. 이 밖에 기타 개인정보침해의 신고, 상담에 대하여는 아래의 기관에 문의하시기 바랍니다.</p>
+<p><strong>1. 개인정보분쟁조정위원회</strong>: (국번없이) 1833-6972 (www.kopico.go.kr)</p>
 <p><strong>2. 개인정보침해신고센터</strong>: (국번없이) 118 (privacy.kisa.or.kr)</p>
 <p><strong>3. 대검찰청</strong>: (국번없이) 1301 (www.spo.go.kr)</p>
 <p><strong>4. 경찰청</strong>: (국번없이) 182 (ecrm.cyber.go.kr)</p>`,
@@ -449,7 +469,8 @@ ${selectedItems.filter(itemId => {
           version: 1
         };
 
-        set({ document });
+          set({ document });
+        }
       },
 
       updateDocumentSection: (sectionId: string, content: string) => {
@@ -475,6 +496,7 @@ ${selectedItems.filter(itemId => {
         selectedItems: [],
         detailInputs: {} as Record<ProcessingItemType, DetailInput>,
         document: null,
+        isGenerating: false,
         isAdvancedMode: false,
         completionRate: 0,
       })
@@ -506,9 +528,9 @@ function getItemName(itemId: ProcessingItemType): string {
     analytics_cookie: '분석/로그(쿠키/접속기록)',
     auth_social: '소셜 로그인',
     payment_refund: '환불/분쟁 처리',
-    account_dormant: '휴계정(비활성 관리)',
+    account_dormant: '휴면계정(비활성 관리)',
     // 고급 모드
-    auth_phone: '휴전화 본인인증',
+    auth_phone: '휴대전화 본인인증',
     delivery_shipping: '배송/물류',
     location_gps: '위치기반 서비스',
     community_content: '커뮤니티/게시물 업로드',

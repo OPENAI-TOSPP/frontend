@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import api from '@/lib/api';
 import type { 
   TermsState, 
   TermsStep, 
@@ -71,6 +72,7 @@ export const useTermsStore = create<TermsState>()(
       selectedFeatures: ['basic'],
       featureInputs: { basic: { enabled: true, details: {} } } as Record<TermsFeatureType, TermsFeatureInput>,
       document: null,
+      isGenerating: false,
       isAdvancedMode: false,
       completionRate: 0,
 
@@ -134,7 +136,26 @@ export const useTermsStore = create<TermsState>()(
 
       setAdvancedMode: (isAdvanced: boolean) => set({ isAdvancedMode: isAdvanced }),
 
-      generateDocument: () => {
+      generateDocument: async () => {
+        const { serviceInfo, selectedFeatures, featureInputs } = get();
+        set({ isGenerating: true });
+        try {
+          const { data } = await api.post('/generate/terms-of-service', {
+            serviceInfo,
+            selectedFeatures,
+            featureInputs,
+          });
+          const result = data.data ?? data;
+          set({ document: { ...result, generatedAt: new Date(result.generatedAt) } });
+          return;
+        } catch (error) {
+          console.error('백엔드 생성 실패, 폴백 실행', error);
+        } finally {
+          set({ isGenerating: false });
+        }
+
+        // 백엔드 연결 실패 시 클라이언트 폴백
+        {
         const { serviceInfo, selectedFeatures } = get();
         
         const chapters: TermsChapter[] = [];
@@ -286,7 +307,7 @@ export const useTermsStore = create<TermsState>()(
             id: 'ch7-art2',
             articleNumber: articleNumber++,
             title: '제15조 (결제)',
-            content: `① 회원은 회사가 정한 방법(신용카드, 계좌이체, 휴전화 결제 등)을 통해 유료서비스 요금을 결제합니다.
+            content: `① 회원은 회사가 정한 방법(신용카드, 계좌이체, 휴대전화 결제 등)을 통해 유료서비스 요금을 결제합니다.
 ② 미성년자가 유료서비스를 이용하려는 경우 법정대리인의 동의를 받아야 합니다.
 ③ 결제 과정에서 발생하는 오류로 인한 손해에 대해 회사는 고의 또는 중대한 과실이 없는 한 책임을 지지 않습니다.`,
           });
@@ -364,10 +385,7 @@ export const useTermsStore = create<TermsState>()(
                 id: 'ch8-art2',
                 articleNumber: articleNumber++,
                 title: '제21조 (위치정보관리책임자)',
-                content: `① 회사의 위치정보관리책임자는 다음과 같습니다.
-- 성명: {representative}
-- 연락처: {contactEmail}
-② 회원은 위치정보와 관련된 문의사항을 위 연락처로 문의할 수 있습니다.`,
+                content: replaceTemplateVars(`① 회사의 위치정보관리책임자는 다음과 같습니다.\n- 성명: {representative}\n- 연락처: {contactEmail}\n② 회원은 위치정보와 관련된 문의사항을 위 연락처로 문의할 수 있습니다.`, serviceInfo),
               },
             ],
           });
@@ -417,7 +435,8 @@ export const useTermsStore = create<TermsState>()(
           version: 1
         };
 
-        set({ document });
+          set({ document });
+        }
       },
 
       updateArticle: (chapterId: string, articleId: string, content: string) => {
@@ -449,6 +468,7 @@ export const useTermsStore = create<TermsState>()(
         selectedFeatures: ['basic'],
         featureInputs: { basic: { enabled: true, details: {} } } as Record<TermsFeatureType, TermsFeatureInput>,
         document: null,
+        isGenerating: false,
         isAdvancedMode: false,
         completionRate: 0,
       })

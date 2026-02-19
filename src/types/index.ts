@@ -115,6 +115,7 @@ export interface AppState {
   selectedItems: ProcessingItemType[];
   detailInputs: Record<ProcessingItemType, DetailInput>;
   document: GeneratedDocument | null;
+  isGenerating: boolean;
   isAdvancedMode: boolean;
   completionRate: number;
   
@@ -129,7 +130,7 @@ export interface AppState {
   removeThirdParty: (itemId: ProcessingItemType, thirdPartyId: string) => void;
   setOverseasInfo: (itemId: ProcessingItemType, info: OverseasInfo) => void;
   setAdvancedMode: (isAdvanced: boolean) => void;
-  generateDocument: () => void;
+  generateDocument: () => Promise<void>;
   updateDocumentSection: (sectionId: string, content: string) => void;
   reset: () => void;
 }
