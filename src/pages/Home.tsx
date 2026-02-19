@@ -1,12 +1,17 @@
 import { Link } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { 
-  FileText, Shield, ArrowRight, Sparkles, 
+import {
+  FileText, Shield, ArrowRight, Sparkles,
   CheckCircle2, Clock, Zap, Lock
 } from 'lucide-react';
+import { useAuthStore } from '@/store/authStore';
+import { LoginButton } from '@/components/auth/LoginButton';
+import { UserMenu } from '@/components/auth/UserMenu';
 
 export function Home() {
+  const { isAuthenticated } = useAuthStore();
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
       {/* Header */}
@@ -23,6 +28,7 @@ export function Home() {
               <a href="#features" className="text-sm text-slate-600 hover:text-slate-900">기능</a>
               <a href="#pricing" className="text-sm text-slate-600 hover:text-slate-900">가격</a>
               <a href="#faq" className="text-sm text-slate-600 hover:text-slate-900">FAQ</a>
+              {isAuthenticated ? <UserMenu /> : <LoginButton />}
             </nav>
           </div>
         </div>

@@ -1,16 +1,18 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { 
-  TermsState, 
-  TermsStep, 
-  TermsServiceInfo, 
-  TermsFeatureType, 
+import type {
+  TermsState,
+  TermsStep,
+  TermsServiceInfo,
+  TermsFeatureType,
   TermsFeatureInput,
   GeneratedTerms,
   TermsChapter,
   TermsArticle
 } from '@/types/terms';
 import { basicTermsTemplate } from '@/data/termsFeatures';
+import { generationApi } from '@/api/generation.api';
+import { documentsApi } from '@/api/documents.api';
 
 const initialServiceInfo: TermsServiceInfo = {
   serviceName: '',
@@ -73,6 +75,8 @@ export const useTermsStore = create<TermsState>()(
       document: null,
       isAdvancedMode: false,
       completionRate: 0,
+      isGenerating: false,
+      generationError: null,
 
       setStep: (step: TermsStep) => set({ currentStep: step }),
 
@@ -134,9 +138,28 @@ export const useTermsStore = create<TermsState>()(
 
       setAdvancedMode: (isAdvanced: boolean) => set({ isAdvancedMode: isAdvanced }),
 
-      generateDocument: () => {
-        const { serviceInfo, selectedFeatures } = get();
-        
+      generateDocument: async () => {
+        const { serviceInfo, selectedFeatures, featureInputs } = get();
+        set({ isGenerating: true, generationError: null });
+
+        // Try API first
+        try {
+          const { data } = await generationApi.generateTermsOfService({
+            serviceInfo,
+            selectedFeatures,
+            featureInputs,
+          });
+          const result = data.data || data;
+          set({
+            document: { ...result, generatedAt: new Date(result.generatedAt) },
+            isGenerating: false,
+          });
+          return;
+        } catch (error) {
+          console.warn('API generation failed, using local fallback');
+        }
+
+        // Fallback: local template generation
         const chapters: TermsChapter[] = [];
         let articleNumber = 1;
 
@@ -417,7 +440,23 @@ export const useTermsStore = create<TermsState>()(
           version: 1
         };
 
-        set({ document });
+        set({ document, isGenerating: false });
+      },
+
+      saveDocument: async () => {
+        const { document, serviceInfo, selectedFeatures, featureInputs } = get();
+        if (!document) return;
+        try {
+          await documentsApi.create({
+            type: 'terms-of-service',
+            title: document.title,
+            content: document,
+            serviceInfo,
+            selections: { selectedFeatures, featureInputs },
+          });
+        } catch (error) {
+          console.error('Failed to save document', error);
+        }
       },
 
       updateArticle: (chapterId: string, articleId: string, content: string) => {
@@ -451,6 +490,8 @@ export const useTermsStore = create<TermsState>()(
         document: null,
         isAdvancedMode: false,
         completionRate: 0,
+        isGenerating: false,
+        generationError: null,
       })
     }),
     {
